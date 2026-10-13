@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class NoticiasSeeder extends Seeder
 {
@@ -19,7 +20,12 @@ class NoticiasSeeder extends Seeder
         ];
 
         foreach ($noticias as $n) {
-            DB::table('noticias')->insert(array_merge($n, ['activo' => true, 'created_at' => now(), 'updated_at' => now()]));
+            DB::table('noticias')->insert(array_merge($n, [
+                'slug' => Str::slug($n['titulo']),
+                'activo' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]));
         }
     }
 }
