@@ -24,6 +24,7 @@ jobs:
       DB_CONNECTION: sqlite
       DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
       APP_URL: https://yeisat.github.io/IngenieriaComercial
+      FORCE_ASSET_ROOT: https://yeisat.github.io/IngenieriaComercial
       APP_ENV: production
       APP_DEBUG: "false"
     steps:
@@ -87,6 +88,10 @@ jobs:
           cp -f public/favicon.ico public/robots.txt dist/ || true
           mkdir -p dist/storage
           cp -a storage/app/public/. dist/storage/ || true
+          PUBLIC_BASE="https://yeisat.github.io/IngenieriaComercial"
+          find dist -name '*.html' -print0 | xargs -0 sed -i \
+            -e "s|http://127.0.0.1:8000|${PUBLIC_BASE}|g" \
+            -e "s|http://localhost:8000|${PUBLIC_BASE}|g"
           touch dist/.nojekyll
           cp dist/index.html dist/404.html
 
