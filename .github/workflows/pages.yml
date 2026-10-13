@@ -1,0 +1,98 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
+      APP_URL: https://yeisat.github.io/IngenieriaComercial
+      APP_ENV: production
+      APP_DEBUG: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, pdo_sqlite, sqlite3, gd, fileinfo
+          coverage: none
+          tools: composer
+
+      - name: Install PHP dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction
+
+      - name: Prepare Laravel
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          touch database/database.sqlite
+          php artisan storage:link || true
+
+      - name: Migrate and seed
+        run: |
+          php artisan migrate --force
+          php artisan db:seed --force
+
+      - name: Snapshot public site
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8000 >/tmp/artisan-serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/ >/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/ >/dev/null || { cat /tmp/artisan-serve.log; tail -n 80 storage/logs/laravel.log || true; exit 1; }
+
+          mkdir -p dist
+          curl -fsS http://127.0.0.1:8000/ -o dist/index.html
+
+          for slug in sepeg aulas computo lectura auditorio direccion; do
+            mkdir -p "dist/infraestructura/${slug}"
+            curl -fsS "http://127.0.0.1:8000/infraestructura/${slug}" \
+              -o "dist/infraestructura/${slug}/index.html" || true
+          done
+
+          php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            foreach (App\Models\Noticia::all() as $n) {
+              if ($n->slug) echo $n->slug, PHP_EOL;
+            }
+          ' | while read -r slug; do
+            [ -z "$slug" ] && continue
+            mkdir -p "dist/noticias/${slug}"
+            curl -fsS "http://127.0.0.1:8000/noticias/${slug}" \
+              -o "dist/noticias/${slug}/index.html" || true
+          done
+
+          cp -a public/css public/js public/img public/webfonts dist/
+          cp -f public/favicon.ico public/robots.txt dist/ || true
+          mkdir -p dist/storage
+          cp -a storage/app/public/. dist/storage/ || true
+          touch dist/.nojekyll
+          cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
